@@ -114,16 +114,25 @@ def _get_field(event, field):
 
 
 def compile_condition(cond, rule_id):
-    """编译单条普通条件，返回 (签名键, 判别式)。"""
+    """编译单条普通条件，返回 (签名键, 判别式)。
+
+    条件结构必须完整合法：缺 field、op 缺失或非法、缺 value（exists 除外）
+    一律抛出 RuleValidationError，不做静默兜底改写，避免规则被收录后
+    按与用户原意不符的方式匹配。
+    """
+    if not isinstance(cond, dict):
+        raise RuleValidationError(f"规则 {rule_id} 条件必须是 JSON 对象: {cond!r}")
     field = cond.get("field")
+    if not field or not isinstance(field, str):
+        raise RuleValidationError(f"规则 {rule_id} 条件缺少 field 字段")
     op = cond.get("op")
-    if not field:
-        field = "type"
+    if not op:
+        raise RuleValidationError(f"规则 {rule_id} 条件缺少 op 字段")
     if op not in config.CONDITION_OPS:
-        op = "exists"
+        raise RuleValidationError(f"规则 {rule_id} 比较方式非法: {op}")
     value = cond.get("value")
     if value is None and op != "exists":
-        value = ""
+        raise RuleValidationError(f"规则 {rule_id} 条件缺少 value 字段")
     key = (field, op, _freeze(value))
 
     if op == "exists":
@@ -180,7 +189,16 @@ class AggSpec:
     __slots__ = ("window_sec", "key_field", "op", "threshold", "agg_type", "value_field")
 
     def __init__(self, agg, rule_id):
-        self.window_sec = int(agg.get("window_sec", 60))
+        if not isinstance(agg, dict):
+            raise RuleValidationError(f"规则 {rule_id} 聚合条件必须是 JSON 对象")
+        try:
+            self.window_sec = int(agg.get("window_sec", 60))
+        except (TypeError, ValueError):
+            raise RuleValidationError(
+                f"规则 {rule_id} 聚合窗口 window_sec 非法: {agg.get('window_sec')}")
+        if self.window_sec <= 0:
+            raise RuleValidationError(
+                f"规则 {rule_id} 聚合窗口 window_sec 必须为正数: {self.window_sec}")
         self.key_field = agg.get("key_field") or "ip"
         self.op = agg.get("op", ">=")
         if self.op not in ("==", "!=", ">", ">=", "<", "<="):

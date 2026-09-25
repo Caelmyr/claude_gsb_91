@@ -64,7 +64,11 @@ class CompiledFlow:
         data = node.get("data", {})
         if not data:
             return lambda ev: True
-        fn = compile_condition_cached(node_id, data)
+        try:
+            fn = compile_condition_cached(node_id, data)
+        except RuleValidationError:
+            # 条件非法（缺字段/比较方式非法等）：按不命中处理，保证执行不中断
+            fn = lambda ev: False
         self._cond_cache[node_id] = fn
         return fn
 

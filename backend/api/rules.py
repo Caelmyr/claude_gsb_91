@@ -32,37 +32,28 @@ def list_rules():
 def validate():
     """规则 JSON 语法校验（不落库）。"""
     data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": True, "valid": False,
+                        "message": "请求体必须是 JSON 对象"})
     rule = data.get("rule", data)
     try:
         compiled = validate_rule_json(rule)
-        return jsonify({
-            "ok": True,
-            "valid": True,
-            "message": "规则语法合法",
-            "detail": {
-                "alpha_conditions": len(compiled.alpha_tests),
-                "agg_conditions": len(compiled.agg_specs),
-                "type_value": compiled.type_value,
-                "action": compiled.action,
-            },
-        })
     except RuleValidationError as exc:
-        conditions = rule.get("conditions", []) if isinstance(rule, dict) else []
-        alpha = sum(1 for c in conditions if isinstance(c, dict) and "agg" not in c)
-        agg = sum(1 for c in conditions if isinstance(c, dict) and "agg" in c)
-        return jsonify({
-            "ok": True, "valid": True, "message": "规则语法合法",
-            "detail": {
-                "alpha_conditions": alpha,
-                "agg_conditions": agg,
-                "type_value": rule.get("type") if isinstance(rule, dict) else None,
-                "action": rule.get("action", {}) if isinstance(rule, dict) else {},
-            },
-        })
+        return jsonify({"ok": True, "valid": False, "message": str(exc)})
     except Exception as exc:
-        return jsonify({"ok": True, "valid": True, "message": "规则语法合法",
-                        "detail": {"alpha_conditions": 0, "agg_conditions": 0,
-                                   "type_value": None, "action": {}}})
+        return jsonify({"ok": True, "valid": False,
+                        "message": f"规则校验失败: {exc}"})
+    return jsonify({
+        "ok": True,
+        "valid": True,
+        "message": "规则语法合法",
+        "detail": {
+            "alpha_conditions": len(compiled.alpha_tests),
+            "agg_conditions": len(compiled.agg_specs),
+            "type_value": compiled.type_value,
+            "action": compiled.action,
+        },
+    })
 
 
 @bp.route("", methods=["POST"])
