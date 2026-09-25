@@ -114,16 +114,25 @@ def _get_field(event, field):
 
 
 def compile_condition(cond, rule_id):
-    """编译单条普通条件，返回 (签名键, 判别式)。"""
+    """编译单条普通条件，返回 (签名键, 判别式)。
+
+    条件结构不完整（缺 field/op/value）或比较方式非法时抛出
+    RuleValidationError，不做静默兜底——否则非法规则会被放行保存，
+    匹配时按被篡改的条件执行，行为与规则原意不符。
+    """
+    if not isinstance(cond, dict):
+        raise RuleValidationError(f"规则 {rule_id} 的条件必须是 JSON 对象")
     field = cond.get("field")
+    if not field or not isinstance(field, str):
+        raise RuleValidationError(f"规则 {rule_id} 的条件缺少 field 字段")
     op = cond.get("op")
-    if not field:
-        field = "type"
+    if not op:
+        raise RuleValidationError(f"规则 {rule_id} 的条件缺少 op 字段")
     if op not in config.CONDITION_OPS:
-        op = "exists"
+        raise RuleValidationError(f"规则 {rule_id} 的比较方式非法: {op}")
     value = cond.get("value")
     if value is None and op != "exists":
-        value = ""
+        raise RuleValidationError(f"规则 {rule_id} 的条件缺少 value 字段")
     key = (field, op, _freeze(value))
 
     if op == "exists":
@@ -263,7 +272,11 @@ class CompiledRule:
         self.type_value = None
 
         for cond in rule.get("conditions", []):
-            if isinstance(cond, dict) and "agg" in cond:
+            if not isinstance(cond, dict):
+                raise RuleValidationError(f"规则 {self.id} 的条件必须是 JSON 对象")
+            if "agg" in cond:
+                if not isinstance(cond["agg"], dict):
+                    raise RuleValidationError(f"规则 {self.id} 的聚合条件必须是 JSON 对象")
                 self.agg_specs.append(AggSpec(cond["agg"], self.id))
             else:
                 key, fn = compile_condition(cond, self.id)

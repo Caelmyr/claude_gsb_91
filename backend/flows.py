@@ -53,6 +53,17 @@ class CompiledFlow:
             if frm not in self.nodes or to not in self.nodes:
                 raise FlowValidationError(f"边引用不存在的节点: {e}")
             self.adj.setdefault(frm, []).append((to, e.get("label", "")))
+        # 条件节点在编译期即校验，避免执行时才暴露非法 field/op/value
+        for n in self.nodes.values():
+            if n.get("type") != "condition":
+                continue
+            data = n.get("data") or {}
+            if not data:
+                continue
+            try:
+                compile_condition(data, n.get("id"))
+            except RuleValidationError as exc:
+                raise FlowValidationError(f"条件节点 {n.get('id')} 非法: {exc}")
 
     def _predicate(self, node_id):
         cached = self._cond_cache.get(node_id)
